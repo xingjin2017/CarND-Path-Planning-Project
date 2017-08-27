@@ -60,7 +60,8 @@ class PathPlanner {
  public:
   PathPlanner(const vector<double>& map_waypoints_x,
 	      const vector<double>& map_waypoints_y,
-	      const vector<double>& map_waypoints_s);
+	      const vector<double>& map_waypoints_s,
+	      const bool debug=false);
 
   void resetMyCar(const MyCar& myCar);
 
@@ -87,12 +88,16 @@ class PathPlanner {
 
   
  private:
+  enum State { LANE_KEEP, LANE_CHANGE };
   MyCar mMyCar;
   vector<double> sTrajectoryCoefficients;
   vector<double> dTrajectoryCoefficients;
   const vector<double>& mMapWaypointsX;
   const vector<double>& mMapWaypointsY;
   const vector<double>& mMapWaypointsS;
+  State mState;
+  int mTargetLane;
+  bool mDebugMode;
 };
 
 #endif // PATH_PLANNER_H

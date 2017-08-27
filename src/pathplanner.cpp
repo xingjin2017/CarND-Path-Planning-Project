@@ -91,9 +91,11 @@ const string SensedCar::debug() const {
 
 PathPlanner::PathPlanner(const vector<double>& map_waypoints_x,
 			 const vector<double>& map_waypoints_y,
-			 const vector<double>& map_waypoints_s) :
+			 const vector<double>& map_waypoints_s,
+			 const bool debug) :
   mMapWaypointsX(map_waypoints_x), mMapWaypointsY(map_waypoints_y),
-  mMapWaypointsS(map_waypoints_s) {
+  mMapWaypointsS(map_waypoints_s), mState(LANE_KEEP), mTargetLane(-1),
+  mDebugMode(debug) {
 }
 
 void PathPlanner::resetMyCar(const MyCar& myCar) {
@@ -139,17 +141,29 @@ void PathPlanner::planWaypoints(const vector<vector<double> >& sensorFusion) {
     sensedCars.push_back(sensedCar);
   }
 
+  if (mState == LANE_CHANGE && mMyCar.mD >= mTargetLane * 4 + 1.0
+      && mMyCar.mD <= mTargetLane * 4 + 3.0) {
+    // Near the center of the target lane
+    mState = LANE_KEEP;
+    mTargetLane = mMyCar.mLane;
+  }
   int targetLane;
   int frontCarId = -1;
   decideOnLane(sensedCars, targetLane, frontCarId);
+  if (targetLane != mMyCar.mLane && mState == LANE_KEEP) {
+    mState = LANE_CHANGE;
+    mTargetLane = targetLane;
+  }
   const SensedCar* frontCar = (frontCarId >= 0) ? &sensedCars[frontCarId] : nullptr;
 
   double maxAvailableSpeed = gMaxAcceleration * gPlanSteps * gTimeStep + mMyCar.mSpeed;
   double targetSpeed = min(gMaxSpeed, maxAvailableSpeed);
   if (frontCar && frontCar->mSpeed < targetSpeed
       && (frontCar->mS - mMyCar.mS) < 50.0) {
-    cout << "Front car distance " << (frontCar->mS - mMyCar.mS)
-	 << " " << frontCar->debug() << endl;
+    if (mDebugMode) {
+      cout << "Front car distance " << (frontCar->mS - mMyCar.mS)
+	   << " " << frontCar->debug() << endl;
+    }
     targetSpeed = max(0.0, frontCar->mSpeed-25+0.5*(frontCar->mS - mMyCar.mS));
   }
 
@@ -186,24 +200,28 @@ void PathPlanner::planWaypoints(const vector<vector<double> >& sensorFusion) {
   double duration = gPlanSteps * gTimeStep;
   endS.assign({targetS, targetSpeed, 0});
   endD.assign({targetD, 0, 0});
-  cout <<"JMT startS " << vec2str(startS) << " endS " << vec2str(endS) << " duration "
-       << duration << endl;
-  cout <<"JMT startD " << vec2str(startD) << " endD " << vec2str(endD) << " duration "
-       << duration << endl;
+  if (mDebugMode) {
+    cout <<"JMT startS " << vec2str(startS) << " endS " << vec2str(endS) << " duration "
+	 << duration << endl;
+    cout <<"JMT startD " << vec2str(startD) << " endD " << vec2str(endD) << " duration "
+	 << duration << endl;
+  }
   jerkMinimization(startS, endS, duration, sTrajectoryCoefficients);
   jerkMinimization(startD, endD, duration, dTrajectoryCoefficients);
   double s0 = getPosition(sTrajectoryCoefficients, 0);
   double d0 = getPosition(dTrajectoryCoefficients, 0);
   double se = getPosition(sTrajectoryCoefficients, duration);
   double de = getPosition(dTrajectoryCoefficients, duration);
-  cout << "JMT verificaiton s0 " << s0 << " se " << se << endl;
-  cout << "JMT verificaiton d0 " << d0 << " de " << de << endl;
-  /*vector<double> ts {1.0, 2.0, 2.8, 3.2, 3.6, 4.0};
-  for (double t : ts) {
-    double st = getPosition(sTrajectoryCoefficients, t);
-    cout << "JMT verification st t " << t << " st " << st << endl;  
+  if (mDebugMode) {
+    cout << "JMT verificaiton s0 " << s0 << " se " << se << endl;
+    cout << "JMT verificaiton d0 " << d0 << " de " << de << endl;
+    /*vector<double> ts {1.0, 2.0, 2.8, 3.2, 3.6, 4.0};
+      for (double t : ts) {
+      double st = getPosition(sTrajectoryCoefficients, t);
+      cout << "JMT verification st t " << t << " st " << st << endl;  
+      }
+    */
   }
-  */
 }
 
 double PathPlanner::scoreChangeToLeftLane(const vector<SensedCar>& sensedCars,
@@ -278,8 +296,10 @@ double PathPlanner::scoreStaySameLane(const vector<SensedCar>& sensedCars,
       if (sDiff > 0.0 && (!frontNearestCar || frontNearestCar->mS > otherCar.mS)) {
 	frontNearestCar = &otherCar;
 	frontCarId = i;
-	cout << "scoreStaySameLane otherCar " << otherCar.debug() << " frontNearnestCar "
-	     << frontNearestCar->debug() << endl;
+	if (mDebugMode) {
+	  cout << "scoreStaySameLane otherCar " << otherCar.debug()
+	       << " frontNearnestCar " << frontNearestCar->debug() << endl;
+	}
       }
     }
   }
@@ -298,14 +318,22 @@ double PathPlanner::scoreStaySameLane(const vector<SensedCar>& sensedCars,
 
 void PathPlanner::decideOnLane(const vector<SensedCar>& sensedCars,
 			       int& targetLane, int& frontCarId) {
+  if (mState == LANE_CHANGE) {
+    targetLane = mTargetLane;
+    scoreChangeLane(targetLane, sensedCars, frontCarId);
+    return;
+  }
+
   targetLane = mMyCar.mLane;
   int sameLaneFrontCar = -1;
   double sameLaneScore = scoreStaySameLane(sensedCars, sameLaneFrontCar);
   double highScore = sameLaneScore;
   if (sameLaneFrontCar >= 0) {
     frontCarId = sameLaneFrontCar;
-    cout << "decideOnLane frontCar id " << frontCarId << " "
-	 << sensedCars[frontCarId].debug() << endl;
+    if (mDebugMode) {
+      cout << "decideOnLane frontCar id " << frontCarId << " "
+	   << sensedCars[frontCarId].debug() << endl;
+    }
   }
   
   int leftFrontCar = -1;
@@ -322,11 +350,13 @@ void PathPlanner::decideOnLane(const vector<SensedCar>& sensedCars,
     frontCarId = rightFrontCar;
     highScore = rightScore;
   }
-  cout << "targetLane " << targetLane << " sameLaneScore "
-       << sameLaneScore << " leftScore " << leftScore
-       << " rightScore " << rightScore << " " << mMyCar.debug() << endl;
-  if (frontCarId >= 0) {
-    cout << "decideOnLane frontCar " << sensedCars[frontCarId].debug() << endl;
+  if (mDebugMode) {
+    cout << "targetLane " << targetLane << " sameLaneScore "
+	 << sameLaneScore << " leftScore " << leftScore
+	 << " rightScore " << rightScore << " " << mMyCar.debug() << endl;
+    if (frontCarId >= 0) {
+      cout << "decideOnLane frontCar " << sensedCars[frontCarId].debug() << endl;
+    }
   }
 }
 
@@ -381,8 +411,10 @@ void PathPlanner::generateSmoothTrajectory(vector<double>& next_x_vals,
   }
   
   tk::spline xSpline, ySpline;
-  cout << "xSpline ptst " << vec2str(ptst) << " ptsx " << vec2str(ptsx) << endl;
-  cout << "ySpline ptst " << vec2str(ptst) << " ptsy " << vec2str(ptsy) << endl;
+  if (mDebugMode) {
+    cout << "xSpline ptst " << vec2str(ptst) << " ptsx " << vec2str(ptsx) << endl;
+    cout << "ySpline ptst " << vec2str(ptst) << " ptsy " << vec2str(ptsy) << endl;
+  }
   xSpline.set_points(ptst, ptsx);
   ySpline.set_points(ptst, ptsy);
 
