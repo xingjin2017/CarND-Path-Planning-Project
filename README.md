@@ -12,6 +12,24 @@ Each waypoint in the list contains  [x,y,s,dx,dy] values. x and y are the waypoi
 
 The highway's waypoints loop around so the frenet s value, distance along the road, goes from 0 to 6945.554.
 
+## Project Reflection
+
+In order to generate a path that the car can safely drive on based on its environment, the following steps are taken.
+
+### Assess the current environment
+
+This includes the car's current position, speed, yaw, and other cars on the road through the sensor fusion data. There is a dedicated PathPlanner class that records and handles all these, and the whole path planning process. 
+
+The car's current position is recorded using the MyCar class and gets updated to the PathPlanner using PathPlanner::resetMyCar, for every time interval. The SensedCar class is used to record the individual cars on the road. The vector of sensorFusion gets translate to the vector of SensedCars for easier handling.
+
+In the PathPlanner::planWaypoints function, the assessment of the current situation is made and a target rudimentary path is selected. This inculdes lane assesment, whether it is desirable to stay in the current lane (PathPlanner::scoreStaySameLane), if there is a car in front that is close and driving slow, it maybe desirable to switch to another lane. Switching to left lane and right lane are assessed in the functions PathPlanner::scoreChangeToLeftLane and PathPlanner::scoreChangeToRightLane. Lane changing depends on if there is a safe distance between the ego car and the cars in front and behind in the target lane. There is a minimum required distance before switching is desirable. It also depends on thoese cars' speed. All these are put together in the PathPlanner::decideOnLane function, which decides on which target lane to use for the planning. The function also returns the nearest front car in the target lane to help determine the target speed. Once the target lane and the reference speed are known, based on the maximum allowed acceleration (gMaxAcceleration), a target speed for the end of planning period is calculated. Once we know all these, assume the end acceleration is 0.0, given the long (250) planning steps - about 5 seconds.
+
+Then in PathPlanner::planWaypoints, the jerk minimization functions are used in both the S direction and the D direction to find out the desired trajectories based on time. The corresponding function is PathPlanner::jerkMinimization. The results are S/D trajectories keyed on time. The jerk minimization formula is from the class lectures.
+
+Once we have the target trajectories from the PathPlanner::planWaypoints function, the PathPlanner::generateSmoothTrajectory function is called to generate the target next_x_vals and next_y_vals, which are used as the input to the simulator for the actual driving. Here, in order to have smoothing driving, a fixed number of x/y points from the previous path are used (gKeepPreviousSteps 40 in the code). The earlier trajectories generated in PathPlanner::planWaypoints are based on time, here in the generateSmoothTrajectory function, we sample a few sparse points at the second half of the planning time period, and use these points plus the first two points from the previous path, to fit splines for both X and Y. Once we have the xSpline, ySpline that are keyed on time, we get the corresponding x and y values for each time step (interval of 0.02 second) and add them to the next_x_vals and next_yvals, which already have certain number (gKeepPreviousSteps) of x/y values from the previous path.
+
+This is it. A bit extra tuning to make sure the maximum speed, acceleration, etc. are not violated. The car is able to drive more than one complete loop repeatedly!
+
 ## Basic Build Instructions
 
 1. Clone this repo.
