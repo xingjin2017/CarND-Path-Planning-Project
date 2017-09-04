@@ -19,19 +19,19 @@ const double gTrajectoryTime = 1.0;
 const double gSameLaneTooMinDistance = 30.0;
 
 // Max speed in meters/second
-const double gMaxSpeed = 20.0;
+const double gMaxSpeed = 18.0;
 
 // Max acceleration m/s**2
-const double gMaxAcceleration = 4.0;
+const double gMaxAcceleration = 3.5;
 
 // Convert speed from miles per hour to meters per second.
 const double MPH_TO_MPS = 0.447;
 
 // number of 0.02 intervals to plan ahead
-const int gPlanSteps = 200;
+const int gPlanSteps = 250;
 
 // number of steps to keep from the previous path
-const int gKeepPreviousSteps = 50;
+const int gKeepPreviousSteps = 40;
 
 // Maximum S value to wrap around
 const double gMaxS = 6945.554;
@@ -390,7 +390,7 @@ void PathPlanner::generateSmoothTrajectory(vector<double>& next_x_vals,
     ptsy.push_back(mMyCar.mY);
   }
 
-  for (double p = 0.7; p <= 1.0; p += 0.1) {
+  for (double p = 0.7; p <= 1.0; p += 0.15) {
     double t = p * gPlanSteps * gTimeStep;
     double s = getPosition(sTrajectoryCoefficients, t);
     double d = getPosition(dTrajectoryCoefficients, t);
